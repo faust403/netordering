@@ -15,6 +15,7 @@ namespace net
 {	
 	struct client final : public boost::noncopyable
 	{
+		boost::asio::io_service IO_Service;
 		boost::asio::ip::tcp::socket Socket;
 		const std::size_t Port;
 	};
@@ -118,12 +119,14 @@ namespace net
 			void launch(void)
 			{
 				ThreadCreated.store(false, std::memory_order_seq_cst);
+
 				Listener = std::thread([&](const boost::asio::ip::tcp::endpoint EndPoint) -> void {
 					std::unique_ptr<std::condition_variable> ConditionVariable = nullptr;
 					boost::asio::ip::tcp::acceptor Acceptor(IO_Service, EndPoint);
 					std::unique_ptr<std::mutex> UpdaterMutex = nullptr;
 					std::unique_ptr<std::atomic<bool>> Flag = nullptr;
 					std::unique_ptr<std::thread> Updater = nullptr;
+					bool Iterated = true;
 
 					if (!is_child) {
 						ConditionVariable = std::make_unique<std::condition_variable>();
@@ -138,8 +141,6 @@ namespace net
 								while (!Flag->load(std::memory_order_acquire))
 									ConditionVariable->wait(UpdaterMutex_UniqueLock);
 
-								ThreadCreated.store(true, std::memory_order_release);
-								
 								ParentMutex->lock();
 								if (ParentQueue->size() >= MaxOrder)
 									boost::asio::write(Queue.front(), boost::asio::buffer("Maximum order limit. Connection closed\0", 40));
@@ -149,7 +150,10 @@ namespace net
 
 								Queue.pop();
 								Flag->store(false, std::memory_order_release);
+
+								Iterated &= false;
 							}
+							Enabled.store(ParentEnabled->load(std::memory_order_acquire));
 						}));
 					}
 
@@ -168,10 +172,16 @@ namespace net
 							Flag->store(true, std::memory_order_release);
 							ConditionVariable->notify_one();
 						}
+						Iterated &= false;
 					}
+					Enabled.store(ParentEnabled->load(std::memory_order_acquire));
 					if(!is_child)
 						Updater->join();
-					ThreadCreated.store(false, std::memory_order_release);
+
+					if(!Iterated)
+						ThreadCreated.store(false, std::memory_order_release);
+					else
+						ThreadCreated.store(true, std::memory_order_release);
 				}, boost::asio::ip::tcp::endpoint{boost::asio::ip::tcp::v4(), boost::asio::ip::port_type(Port)});
 			}
 	};
