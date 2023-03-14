@@ -1,272 +1,206 @@
 # pragma once
 
-# include <boost/asio.hpp>
-# include <boost/noncopyable.hpp>
-
-# include <queue>
-# include <array>
-# include <thread>
-# include <vector>
 # include <iostream>
-# include <type_traits>
+# include <vector>
+# include <memory>
+# include <thread>
+# include <queue>
 # include <condition_variable>
+# include <type_traits>
+# include <string_view>
+
+# include <boost/noncopyable.hpp>
+# include <boost/asio.hpp>
+
+constexpr std::string_view ErrorMessage = "Sorry";
 
 namespace net
-{	
-	struct client final : public boost::noncopyable
+{
+	struct connection final : public boost::noncopyable
 	{
-		boost::asio::io_service IO_Service;
-		boost::asio::ip::tcp::socket Socket;
+		std::unique_ptr<boost::asio::io_service> ios = nullptr;
+		std::unique_ptr<boost::asio::ip::tcp::socket> Socket = nullptr;
 		const std::size_t Port;
+
+		connection(void) = default;
+		template<typename Type>
+		explicit connection(const Type __Port): Port(__Port)
+		{
+			if constexpr (!std::is_integral_v<Type>)
+				throw std::invalid_argument("Given Port is not integral");
+		}
+		explicit connection(std::unique_ptr<boost::asio::io_service>&& __ios, std::unique_ptr<boost::asio::ip::tcp::socket>&& __Socket, std::size_t __Port)
+			: ios(std::move(__ios)), Socket(std::move(Socket)), Port(std::move(__Port))
+		{ }
+		~connection(void) = default;
 	};
 
 	class listener final : public boost::noncopyable
 	{
-		const bool is_child = true;
+		bool Sleep = false;
 		std::thread Listener;
-		const std::size_t Port;
-		boost::asio::io_service IO_Service;
-
+		std::mutex ClientsMutex;
+		std::mutex EnabledMutex;
 		std::atomic<bool> Enabled;
-		std::atomic<bool> ThreadCreated;
-		std::atomic<bool>* ParentEnabled = new std::atomic<bool>(true);
-
-		std::queue<boost::asio::ip::tcp::socket> Queue;
-		std::queue<boost::asio::ip::tcp::socket>* ParentQueue = NULL;
-
-		std::mutex* ParentMutex;
-
-		const std::size_t MaxOrder = 0;
+		std::atomic<bool> IsLocked;
+		std::atomic<std::size_t> Port;
+		std::atomic<std::size_t> Limit;
+		std::queue<std::unique_ptr<connection>> Clients;
 
 		public:
-			listener(void) = delete;
-
-			template<typename Type>
-			explicit listener(const Type Port): Port(Port),
-												Enabled(false),
-												ThreadCreated(false)
+			listener(void) : IsLocked(false),
+							 Enabled(true),
+							 Port(80),
+							 Limit(0)
 			{
-				if constexpr (!std::is_integral_v<Type>)
-					throw std::invalid_argument("Invalid argument given");
-
-				else
-					enable();
+				launch();
 			}
 
 			template<typename Type>
-			explicit listener(const Type __Port,
-				std::atomic<bool>* ParentEnabled,
-				std::queue<boost::asio::ip::tcp::socket>* ParentQueue,
-				std::mutex* ParentMutex,
-				const std::size_t MaxOrder) :
-				ParentEnabled(ParentEnabled),
-				ParentQueue(ParentQueue),
-				ParentMutex(ParentMutex),
-				MaxOrder(MaxOrder),
-				is_child(false),
-				Port(__Port),
-				Enabled(false),
-				ThreadCreated(false)
+			explicit listener(const Type Port) : Port(static_cast<std::size_t>(Port)),
+												 IsLocked(false),
+												 Enabled(true),
+												 Limit(0)
 			{
 				if constexpr (!std::is_integral_v<Type>)
-					throw std::invalid_argument("Invalid argument given");
+					throw std::invalid_argument("Given Port is not integral");
 
-				else
-					enable();
+				launch();
+			}
+
+			template<typename Type1, typename Type2>
+			explicit listener(const Type1 Port, const Type2 Limit) : Limit(static_cast<std::size_t>(Limit)),
+																	 Port(static_cast<std::size_t>(Port)),
+																	 IsLocked(false),
+																	 Enabled(true)
+			{
+				if constexpr (!std::is_integral_v<Type1> && !std::is_integral_v<Type2>)
+					throw std::invalid_argument("Given Port or Limit is not integral");
+
+				launch();
 			}
 
 			~listener(void)
 			{
-				if (is_child)
-					delete ParentEnabled;
+				Enabled.store(false, std::memory_order_release);
 
 				disable();
+				if (Listener.joinable())
+					Listener.join();
+				else
+					throw std::runtime_error("Listener is not joinable");
+
+				EnabledMutex.unlock();
 			}
 
 			void enable(void)
 			{
-				if (!Enabled.load(std::memory_order_acquire))
-				{
-					Enabled.store(true, std::memory_order_release);
+				if(Sleep)
+					if (!IsLocked.load(std::memory_order_acquire))
+					{
+						while (!IsLocked.load(std::memory_order_acquire))
+							continue;
 
-					launch();
-				}
+						EnabledMutex.unlock();
+						IsLocked.store(false, std::memory_order_seq_cst);
+						Sleep = false;
+					}
 			}
 
 			void disable(void)
 			{
-				if (Enabled.load(std::memory_order_acquire))
-				{
-					while (!ThreadCreated.load(std::memory_order_acquire))
-						continue;
+				if(!Sleep)
+					if (IsLocked.load(std::memory_order_acquire))
+					{
+						while (IsLocked.load(std::memory_order_acquire))
+							continue;
 
-					Enabled.store(false, std::memory_order_release);
-
-					if (Listener.joinable())
-						Listener.join();
-					ThreadCreated.store(false, std::memory_order_release);
-				}
+						EnabledMutex.lock();
+						IsLocked.store(true, std::memory_order_seq_cst);
+						Sleep = true;
+					}
 			}
 
-			std::size_t port(void) const noexcept { return Port; }
-
-			bool operator == (listener const& Another)
+			std::size_t get_port(void)
 			{
-				return Port == Another.port();
+				return Port.load(std::memory_order_relaxed);
+			}
+
+			template<typename Type>
+			void set_port(const Type __Port)
+			{
+				if constexpr(!std::is_integral_v<Type>)
+					throw std::invalid_argument("Given Port is not integral");
+
+				disable();
+				Port.store(__Port, std::memory_order_relaxed);
+				enable();
+			}
+
+			std::size_t get_limit(void)
+			{
+				return Limit.load(std::memory_order_relaxed);
+			}
+
+			template<typename Type>
+			void set_limit(const Type __Port)
+			{
+				if constexpr (!std::is_integral_v<Type>)
+					throw std::invalid_argument("Given Limit is not integral");
+
+				disable();
+				Limit.store(__Port, std::memory_order_relaxed);
+				enable();
+			}
+
+			std::unique_ptr<connection> pull_one(void)
+			{
+				std::lock_guard<std::mutex> LockGuard(ClientsMutex);
+
+				if (Clients.size() == 0)
+					return nullptr;
+				else
+				{
+					std::unique_ptr<connection> Result = std::move(Clients.front());
+
+					Clients.pop();
+					return Result;
+				}
 			}
 
 		private:
 			void launch(void)
 			{
-				ThreadCreated.store(false, std::memory_order_seq_cst);
+				Listener = std::thread([&](void) -> void {
+					boost::asio::io_service IO_ServiceAcceptor;
+					std::size_t CachedLimit = Limit.load(std::memory_order_acquire);
 
-				Listener = std::thread([&](const boost::asio::ip::tcp::endpoint EndPoint) -> void {
-					std::unique_ptr<std::condition_variable> ConditionVariable = nullptr;
-					boost::asio::ip::tcp::acceptor Acceptor(IO_Service, EndPoint);
-					std::unique_ptr<std::mutex> UpdaterMutex = nullptr;
-					std::unique_ptr<std::atomic<bool>> Flag = nullptr;
-					std::unique_ptr<std::thread> Updater = nullptr;
-					bool Iterated = true;
-
-					if (!is_child) {
-						ConditionVariable = std::make_unique<std::condition_variable>();
-						UpdaterMutex = std::make_unique<std::mutex>();
-						Flag = std::make_unique<std::atomic<bool>>(false);
-
-						Updater = std::make_unique<std::thread>(([&](void) -> void {
-							while (Enabled.load(std::memory_order_acquire) &&
-								   ParentEnabled->load(std::memory_order_acquire))
-							{
-								std::unique_lock<std::mutex> UpdaterMutex_UniqueLock(*UpdaterMutex);
-								while (!Flag->load(std::memory_order_acquire))
-									ConditionVariable->wait(UpdaterMutex_UniqueLock);
-
-								ParentMutex->lock();
-								if (ParentQueue->size() >= MaxOrder)
-									boost::asio::write(Queue.front(), boost::asio::buffer("Maximum order limit. Connection closed\0", 40));
-								else
-									ParentQueue->push(std::move(Queue.front()));
-								ParentMutex->unlock();
-
-								Queue.pop();
-								Flag->store(false, std::memory_order_release);
-
-								Iterated &= false;
-							}
-							Enabled.store(ParentEnabled->load(std::memory_order_acquire));
-						}));
-					}
-
-					while (Enabled.load(std::memory_order_acquire) &&
-						   ParentEnabled->load(std::memory_order_acquire))
+					while (Enabled.load(std::memory_order_acquire))
 					{
-						boost::asio::ip::tcp::socket Socket(IO_Service);
-						Acceptor.accept(Socket);
+						EnabledMutex.lock();
+						IsLocked.store(true, std::memory_order_seq_cst);
 
-						UpdaterMutex->lock();
-						Queue.push(std::move(Socket));
-						UpdaterMutex->unlock();
+						std::unique_ptr<connection> Connection = std::make_unique<connection>(Port.load(std::memory_order_acquire));
+						Connection->ios = std::make_unique<boost::asio::io_service>();
+						Connection->Socket = std::make_unique<boost::asio::ip::tcp::socket>(*Connection->ios);
+						
+						boost::asio::ip::tcp::endpoint EndPoint(boost::asio::ip::tcp::v4(), static_cast<boost::asio::ip::port_type>(Connection->Port));
+						
+						boost::asio::ip::tcp::acceptor Acceptor(IO_ServiceAcceptor, EndPoint);
+						Acceptor.accept(*Connection->Socket);
+						
+						std::lock_guard<std::mutex> LockGuard(ClientsMutex);
+						CachedLimit = Limit.load(std::memory_order_seq_cst);
 
-						if (!is_child)
-						{
-							Flag->store(true, std::memory_order_release);
-							ConditionVariable->notify_one();
-						}
-						Iterated &= false;
+						if (CachedLimit == 0 || Clients.size() < CachedLimit)
+							Clients.push(std::move(Connection));
+						else
+							boost::asio::write(*Connection->Socket, boost::asio::buffer(ErrorMessage.data(), ErrorMessage.size()));
+						
+						EnabledMutex.unlock();
+						IsLocked.store(false, std::memory_order_seq_cst);
 					}
-					Enabled.store(ParentEnabled->load(std::memory_order_acquire));
-					if(!is_child)
-						Updater->join();
-
-					if(!Iterated)
-						ThreadCreated.store(false, std::memory_order_release);
-					else
-						ThreadCreated.store(true, std::memory_order_release);
-				}, boost::asio::ip::tcp::endpoint{boost::asio::ip::tcp::v4(), boost::asio::ip::port_type(Port)});
-			}
-	};
-
-	template<std::size_t MaxOrder = 64>
-	class netqueue final : public boost::noncopyable
-	{
-		std::atomic<bool> Enabled;
-		std::vector<std::unique_ptr<listener>> Listeners;
-		std::queue<boost::asio::ip::tcp::socket> Queue;
-		std::mutex GlobalMutex;
-
-		public:
-			netqueue(void) :Enabled(true)
-			{ }
-			template<typename... Args>
-			netqueue(Args... args) :Enabled(true)
-			{
-				if constexpr (!(std::is_integral_v<decltype(args)> && ...))
-					throw std::invalid_argument("Invalid argument given. Port must be integral");
-
-				(add(args), ...);
-			}
-			~netqueue(void)
-			{
-				disable();
-				Listeners.clear();
-			}
-
-			std::size_t size(void)
-			{
-				std::lock_guard<std::mutex> LockGuard(GlobalMutex);
-
-				return Queue.size();
-			}
-
-			void enable(void)
-			{
-				Enabled.store(true, std::memory_order_release);
-			}
-			void disable(void)
-			{
-				Enabled.store(false, std::memory_order_release);
-			}
-
-			template<typename Type>
-			void add(const Type Port)
-			{
-				if constexpr (!std::is_integral_v<Type>)
-					throw std::invalid_argument("Port is not an integer");
-
-				for (std::vector<std::unique_ptr<listener>>::iterator Iterator = Listeners.begin(); Iterator != Listeners.end(); Iterator += 1)
-					if (Iterator->get()->port() == Port)
-						return;
-				
-				Listeners.push_back(
-					std::make_unique<listener>(Port,
-						&Enabled,
-						&Queue,
-						&GlobalMutex,
-						MaxOrder)
-				);
-			}
-
-			template<typename Type>
-			void remove(const Type Port)
-			{
-				if constexpr (!std::is_integral_v<Type>)
-					throw std::invalid_argument("Port is not an integer");
-
-				for (std::vector<std::unique_ptr<listener>>::iterator Iterator = Listeners.begin(); Iterator != Listeners.end();)
-					if (Iterator->get()->port() == Port)
-						Iterator = Listeners.erase(Iterator);
-					else
-						Iterator += 1;
-			}
-
-			boost::asio::ip::tcp::socket pull_one(void)
-			{
-				GlobalMutex.lock();
-				boost::asio::ip::tcp::socket Socket(std::move(Queue.front()));
-				Queue.pop();
-				GlobalMutex.unlock();
-
-				return Socket;
+				});
 			}
 	};
 }
