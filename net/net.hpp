@@ -162,6 +162,14 @@ namespace net
 				enable();
 			}
 
+			std::size_t size(void)
+			{
+				std::lock_guard<std::mutex> LockGuard(ThreadSafety);
+				std::lock_guard<std::mutex> __LockGuard(ClientsMutex);
+
+				return Clients.size();
+			}
+
 			std::unique_ptr<connection> pull_one(void)
 			{
 				std::lock_guard<std::mutex> LockGuard(ThreadSafety);

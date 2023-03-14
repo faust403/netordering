@@ -13,5 +13,10 @@ std::string make_string(boost::asio::streambuf& streambuf)
 int main(void)
 {
 	net::listener Listener(1337, 2);
-	std::this_thread::sleep_for(std::chrono::seconds(5));
+
+	while(Listener.size() == 0)
+	{ }
+	Listener.disable();
+	std::unique_ptr<net::connection> Con = Listener.pull_one();
+	boost::asio::write(*Con -> Socket, boost::asio::buffer("Hello", 6));
 }
