@@ -41,6 +41,7 @@ namespace net
 		std::thread Listener;
 		std::mutex ClientsMutex;
 		std::mutex EnabledMutex;
+		std::mutex ThreadSafety;
 		std::atomic<bool> Enabled;
 		std::atomic<bool> IsLocked;
 		std::atomic<std::size_t> Port;
@@ -95,6 +96,8 @@ namespace net
 
 			void enable(void)
 			{
+				std::lock_guard<std::mutex> LockGuard(ThreadSafety);
+
 				if(Sleep)
 					if (!IsLocked.load(std::memory_order_acquire))
 					{
@@ -109,6 +112,8 @@ namespace net
 
 			void disable(void)
 			{
+				std::lock_guard<std::mutex> LockGuard(ThreadSafety);
+
 				if(!Sleep)
 					if (IsLocked.load(std::memory_order_acquire))
 					{
@@ -123,6 +128,8 @@ namespace net
 
 			std::size_t get_port(void)
 			{
+				std::lock_guard<std::mutex> LockGuard(ThreadSafety);
+
 				return Port.load(std::memory_order_relaxed);
 			}
 
@@ -139,6 +146,8 @@ namespace net
 
 			std::size_t get_limit(void)
 			{
+				std::lock_guard<std::mutex> LockGuard(ThreadSafety);
+
 				return Limit.load(std::memory_order_relaxed);
 			}
 
@@ -155,7 +164,8 @@ namespace net
 
 			std::unique_ptr<connection> pull_one(void)
 			{
-				std::lock_guard<std::mutex> LockGuard(ClientsMutex);
+				std::lock_guard<std::mutex> LockGuard(ThreadSafety);
+				std::lock_guard<std::mutex> __LockGuard(ClientsMutex);
 
 				if (Clients.size() == 0)
 					return nullptr;
@@ -171,6 +181,8 @@ namespace net
 		private:
 			void launch(void)
 			{
+				std::lock_guard<std::mutex> LockGuard(ThreadSafety);
+
 				Listener = std::thread([&](void) -> void {
 					boost::asio::io_service IO_ServiceAcceptor;
 					std::size_t CachedLimit = Limit.load(std::memory_order_acquire);
