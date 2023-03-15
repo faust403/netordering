@@ -1,5 +1,7 @@
 # pragma once
 
+# include <type_traits>
+# include <string_view>
 # include <iostream>
 # include <cassert>
 # include <vector>
@@ -7,8 +9,6 @@
 # include <thread>
 # include <future>
 # include <queue>
-# include <type_traits>
-# include <string_view>
 
 # include <boost/noncopyable.hpp>
 # include <boost/asio.hpp>
@@ -569,6 +569,31 @@ namespace net
 			std::size_t get_limit_executor(void)
 			{
 				return LimitExecutor.load(std::memory_order_relaxed);
+			}
+
+			std::vector<std::size_t> listeners(void)
+			{
+				std::vector<std::size_t> Result;
+
+				ListenersProtector.lock();
+				for (decltype(Listeners)::iterator Iterator = Listeners.begin(); Iterator != Listeners.end(); Iterator += 1)
+					Result.push_back(Iterator->get()->get_port());
+				ListenersProtector.unlock();
+
+				return Result;
+			}
+
+			std::vector<std::size_t> active_listeners(void)
+			{
+				std::vector<std::size_t> Result;
+
+				ListenersProtector.lock();
+				for (decltype(Listeners)::iterator Iterator = Listeners.begin(); Iterator != Listeners.end(); Iterator += 1)
+					if (Iterator->get()->is_enabled())
+						Result.push_back(Iterator->get()->get_port());
+				ListenersProtector.unlock();
+
+				return Result;
 			}
 
 		private:
