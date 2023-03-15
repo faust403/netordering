@@ -19,10 +19,10 @@ namespace net
 {
 	/*
 	*		*------------------------------*
-	*		| connection:				   |
+	*		| connection:			|
 	*		| -> unique_ptr<socket> Socket |
 	*		| -> unique_ptr<socket> ios    |
-	*		| #  const size_t Port		   |
+	*		| #  const size_t Port		|
 	*		*------------------------------*
 	* 
 	*	Pointer to this structure is a return type of pull_one()
@@ -55,9 +55,9 @@ namespace net
 
 
 	/*
-	*					 *-----------------------*
+	*			 *-----------------------*
 	*	pull_one()  <->	 |	 Connections Order   |	<->	  Background thread listener
-	*					 *-----------------------*
+	*			 *-----------------------*
 	*
 	*	Listener is listening given port. By deafult this port is 80(HTTP).
 	* 
@@ -98,9 +98,9 @@ namespace net
 
 			template<typename Type>
 			explicit listener(const Type Port) : Port(static_cast<std::size_t>(Port)),
-												 IsLocked(false),
-												 Enabled(true),
-												 Limit(0)
+								IsLocked(false),
+								Enabled(true),
+								Limit(0)
 			{
 				static_assert(std::is_integral_v<Type>, "Given Port is not integral");
 
@@ -109,9 +109,9 @@ namespace net
 
 			template<typename Type1, typename Type2>
 			explicit listener(const Type1 Port, const Type2 Limit) : Limit(static_cast<std::size_t>(Limit)),
-																	 Port(static_cast<std::size_t>(Port)),
-																	 IsLocked(false),
-																	 Enabled(true)
+										Port(static_cast<std::size_t>(Port)),
+										IsLocked(false),
+										Enabled(true)
 			{
 				static_assert(std::is_integral_v<Type1>, "Given Port is not integral");
 				static_assert(std::is_integral_v<Type2>, "Given Limit is not integral");
