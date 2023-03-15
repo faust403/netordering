@@ -122,13 +122,13 @@ namespace net
 			{
 				Enabled.store(false, std::memory_order_release);
 
-				disable();
+				if (Sleep)
+					EnabledMutex.unlock();
+
 				if (Listener.joinable())
 					Listener.join();
 				else
 					throw std::runtime_error("Listener is not joinable");
-
-				EnabledMutex.unlock();
 			}
 
 			void enable(void)
@@ -205,6 +205,7 @@ namespace net
 				return Clients.size();
 			}
 
+			[[ nodiscard ]]
 			std::unique_ptr<connection> pull_one(void)
 			{
 				std::lock_guard<std::mutex> LockGuard(ThreadSafety);
@@ -219,6 +220,11 @@ namespace net
 					Clients.pop();
 					return Result;
 				}
+			}
+
+			bool is_enabled(void)
+			{
+				return Sleep;
 			}
 
 		private:
@@ -259,24 +265,182 @@ namespace net
 			}
 	};
 
-	class server final : public boost::noncopyable
+	class queue final : public boost::noncopyable
 	{
+		std::thread Updater;
+		std::mutex ThreadSafety;
+		std::atomic<bool> Status;
+		std::mutex QueueProtector;
+		std::atomic<bool> Enabled;
 		std::vector<std::unique_ptr<listener>> Listeners;
 
+		std::queue<std::unique_ptr<connection>> Queue;
+
 		public:
-			server(void) = default;
+			queue(void) : Enabled(true), Status(false)
+			{
+				launcher();
+			}
 
 			template<typename... Args>
-			server(Args... args)
+			queue(Args... args) : Enabled(true), Status(true)
 			{
 				static_assert((std::is_integral_v<decltype(args)> && ...), "Given Port is not integral");
 
 				(Listeners.push_back(std::make_unique<listener>(args)), ...);
+
+				launcher();
 			}
 
-			~server(void) = default;
+			~queue(void)
+			{
+				Enabled.store(false, std::memory_order_seq_cst);
+				Listeners.clear();
+
+				if (Updater.joinable())
+					Updater.join();
+				else
+					throw std::runtime_error("Updater is not joinable");
+			}
 
 			template<typename Type>
-			void add(const Type Port){}
+			void add(const Type Port)
+			{
+				static_assert(std::is_integral_v<Type>, "Given Port is not integral");
+
+				std::lock_guard<std::mutex> ThreadSafetyLockGuard(ThreadSafety);
+
+				std::vector<std::unique_ptr<listener>>::iterator Iterator;
+				for (Iterator = Listeners.begin(); Iterator != Listeners.end(); Iterator += 1)
+					if (Iterator->get()->get_port() == Port)
+					{
+						Iterator = Listeners.end();
+						break;
+					}
+
+				if (Iterator != Listeners.end())
+				{
+					Listeners.push_back(std::make_unique<listener>(Port));
+					update();
+				}
+			}
+
+			template<typename Type>
+			void remove(const Type Port)
+			{
+				static_assert(std::is_integral_v<Type>, "Given Port is not integral");
+
+				std::lock_guard<std::mutex> ThreadSafetyLockGuard(ThreadSafety);
+
+				for(std::vector<std::unique_ptr<listener>>::iterator Iterator = Listeners.begin(); Iterator != Listeners.end(); Iterator += 1)
+					if (Iterator->get()->get_port() == Port)
+						Iterator = Listeners.erase(Iterator);
+
+				update();
+			}
+
+			std::size_t size(void)
+			{
+				std::lock_guard<std::mutex> ThreadSafetyLockGuard(ThreadSafety);
+				std::lock_guard<std::mutex> QueueProtectorLockGuard(QueueProtector);
+
+				return Queue.size();
+			}
+
+			std::unique_ptr<connection> pull_one(void)
+			{
+				if (Listeners.size() == 0)
+					return nullptr;
+
+				else
+				{
+					std::lock_guard<std::mutex> ThreadSafetyLockGuard(ThreadSafety);
+					std::lock_guard<std::mutex> QueueProtectorLockGuard(QueueProtector);
+
+					std::unique_ptr<connection> Result = std::move(Queue.front());
+					Queue.pop();
+					return Result;
+				}
+			}
+
+			void enable(void)
+			{
+				for (auto& Listener : Listeners)
+					Listener->enable();
+				update();
+			}
+
+			void disable(void)
+			{
+				for (auto& Listener : Listeners)
+					Listener->disable();
+				update();
+			}
+
+			template<typename Type>
+			void enable(const Type Port)
+			{
+				static_assert(std::is_integral_v<Type>, "Given Port is not integral");
+
+				for (std::vector<std::unique_ptr<listener>>::iterator Iterator = Listeners.begin(); Iterator != Listeners.end(); Iterator += 1)
+					if (Iterator->get()->get_port() == Port)
+						Iterator->get()->enable();
+
+				update();
+			}
+
+			template<typename... Type>
+			void enable_list(const Type... Port)
+			{
+				static_assert((std::is_integral_v<decltype(Port)> && ...), "Given Port is not integral");
+
+				(enable(Port), ...);
+			}
+
+			template<typename... Type>
+			void disable_list(const Type... Port)
+			{
+				static_assert((std::is_integral_v<decltype(Port)> && ...), "Given Port is not integral");
+
+				(disable(Port), ...);
+			}
+
+			bool is_enabled(void)
+			{
+				return Status.load(std::memory_order_relaxed);
+			}
+
+		private:
+			void launcher(void)
+			{
+				Updater = std::thread([&](void) -> void {
+					while(Enabled.load(std::memory_order_acquire))
+					{
+						for (auto& Listener : Listeners)
+						{
+							std::unique_ptr<connection> Connection = Listener->pull_one();
+
+							if (Connection != nullptr)
+							{
+								std::lock_guard<std::mutex> QueueProtectorLockGuard(QueueProtector);
+
+								Queue.push(std::move(Connection));
+							}
+						}
+					}
+				});
+			}
+
+			void update(void)
+			{
+				if (Listeners.size() == 0)
+					Status.store(false, std::memory_order_release);
+
+				bool Result = false;
+				for (auto& Listener : Listeners)
+					Result |= Listener->is_enabled();
+
+				Status.store(Result, std::memory_order_release);
+			}
 	};
 }
