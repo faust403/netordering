@@ -121,7 +121,7 @@ namespace net
 
 			~listener(void)
 			{
-				Enabled.store(false, std::memory_order_release);
+				Enabled.store(false, std::memory_order_seq_cst);
 
 				if (Sleep)
 					EnabledMutex.unlock();
@@ -285,6 +285,7 @@ namespace net
 			std::atomic<bool> Status;
 			std::mutex QueueProtector;
 			std::atomic<bool> Enabled;
+			std::mutex ListenersProtector;
 			std::atomic<std::size_t> LimitOrder;
 			std::vector<std::unique_ptr<listener>> Listeners;
 
@@ -309,7 +310,6 @@ namespace net
 			~queue(void)
 			{
 				Enabled.store(false, std::memory_order_seq_cst);
-				Listeners.clear();
 
 				if (Updater.joinable())
 					Updater.join();
@@ -324,17 +324,21 @@ namespace net
 
 				std::lock_guard<std::mutex> ThreadSafetyLockGuard(ThreadSafety);
 
+				bool IsIncluded = false;
 				std::vector<std::unique_ptr<listener>>::iterator Iterator;
 				for (Iterator = Listeners.begin(); Iterator != Listeners.end(); Iterator += 1)
 					if (Iterator->get()->get_port() == Port)
 					{
-						Iterator = Listeners.end();
+						IsIncluded = true;
 						break;
 					}
 
-				if (Iterator != Listeners.end())
+				if (!IsIncluded)
 				{
+					ListenersProtector.lock();
+
 					Listeners.push_back(std::make_unique<listener>(Port));
+					ListenersProtector.unlock();
 					update();
 				}
 			}
@@ -351,11 +355,15 @@ namespace net
 				static_assert(std::is_integral_v<Type>, "Given Port is not integral");
 
 				std::lock_guard<std::mutex> ThreadSafetyLockGuard(ThreadSafety);
+				ListenersProtector.lock();
 
-				for(std::vector<std::unique_ptr<listener>>::iterator Iterator = Listeners.begin(); Iterator != Listeners.end(); Iterator += 1)
+				for (std::vector<std::unique_ptr<listener>>::iterator Iterator = Listeners.begin(); Iterator != Listeners.end();)
 					if (Iterator->get()->get_port() == Port)
 						Iterator = Listeners.erase(Iterator);
+					else
+						Iterator += 1;
 
+				ListenersProtector.unlock();
 				update();
 			}
 
@@ -406,18 +414,24 @@ namespace net
 			void enable(void)
 			{
  				std::lock_guard<std::mutex> ThreadSafetyLockGuard(ThreadSafety);
+				ListenersProtector.lock();
 
 				for (auto& Listener : Listeners)
 					Listener->enable();
+
+				ListenersProtector.unlock();
 				update();
 			}
 
 			void disable(void)
 			{
 				std::lock_guard<std::mutex> ThreadSafetyLockGuard(ThreadSafety);
+				ListenersProtector.lock();
 
 				for (auto& Listener : Listeners)
 					Listener->disable();
+
+				ListenersProtector.unlock();
 				update();
 			}
 
@@ -426,10 +440,13 @@ namespace net
 			{
 				static_assert(std::is_integral_v<Type>, "Given Port is not integral");
 
+				ListenersProtector.lock();
+
 				for (std::vector<std::unique_ptr<listener>>::iterator Iterator = Listeners.begin(); Iterator != Listeners.end(); Iterator += 1)
 					if (Iterator->get()->get_port() == Port)
 						Iterator->get()->enable();
 
+				ListenersProtector.unlock();
 				update();
 			}
 
@@ -460,6 +477,8 @@ namespace net
 				Updater = std::thread([&](void) -> void {
 					while(Enabled.load(std::memory_order_acquire))
 					{
+						std::lock_guard<std::mutex> ListenersProtectorLockGuard(ListenersProtector);
+
 						for (auto& Listener : Listeners)
 						{
 							std::unique_ptr<connection> Connection = Listener->pull_one();
@@ -483,6 +502,8 @@ namespace net
 			{
 				if (Listeners.size() == 0)
 					Status.store(false, std::memory_order_release);
+				
+				std::lock_guard<std::mutex> ListenersProtectorLockGuard(ListenersProtector);
 
 				bool Result = false;
 				for (auto& Listener : Listeners)

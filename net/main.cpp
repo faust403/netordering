@@ -35,25 +35,46 @@ std::string hash(std::string const& String, const EVP_MD* HashFunction)
 class A final
 {
 	public:
-		void operator()(const std::unique_ptr<net::connection> Connection)
+		void service80(const std::unique_ptr<net::connection>&& Connection)
 		{
 			boost::asio::streambuf StreamBuffer;
-			std::string Read = "Hello, world";
-			std::string Hash;
-			if (Connection->port == 1337)
-				Hash = "HTTP/1.0 200 OK\n\n<p>(MD5)(" + Read + ") = " + hash(Read, EVP_md5()) + "</p>\n";
-			else
-				Hash = "HTTP/1.0 200 OK\n\n<p>(SHA256)(" + Read + ") = " + hash(Read, EVP_sha256()) + "</p>\n";
+			std::string Result = "Hello from server";
+			std::string Hash = "HTTP/1.0 200 OK\n\n<p>(SHA256)(" + Result + ") = " + hash(Result, EVP_sha256()) + "</p>\n";
 			std::cout << "Write: " << Hash << std::endl;
 
 			boost::asio::read_until(*Connection->socket, StreamBuffer, "\0");
 			Connection->socket->write_some(boost::asio::buffer(Hash.c_str(), Hash.size()));
 			std::this_thread::sleep_for(std::chrono::milliseconds(10));
 		}
+		void service13456(const std::unique_ptr<net::connection>&& Connection)
+		{
+			boost::asio::streambuf StreamBuffer;
+			boost::asio::read_until(*Connection->socket, StreamBuffer, "\0");
+
+			std::string Read = make_string(StreamBuffer);
+			std::string Hash = "(MD5)(" + Read + ") = " + hash(Read, EVP_md5());
+			
+			std::cout << "Write: " << Hash << std::endl;
+
+			Connection->socket->write_some(boost::asio::buffer(Hash.c_str(), Hash.size()));
+		}
+		void operator()(const std::unique_ptr<net::connection> Connection)
+		{
+			if (Connection->port == 80)
+				service80(std::move(Connection));
+
+			if (Connection->port == 13456)
+				service13456(std::move(Connection));
+		}
 } a;
 
 int main(void)
 {
-	net::server Server(a, 80);
-	while(true) { }
+	net::server Server(a, 80, 13456);
+	std::this_thread::sleep_for(std::chrono::seconds(2));
+	std::cout << "Marker" << std::endl;
+	Server.remove(80);
+	std::cout << "Marker" << std::endl;
+	std::this_thread::sleep_for(std::chrono::seconds(2));
+	std::cout << Server.is_enabled() << std::endl;
 }
