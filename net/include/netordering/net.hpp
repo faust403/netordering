@@ -19,10 +19,10 @@ namespace net
 {
 	/*
 	*		*------------------------------*
-	*		| connection:			|
+	*		| connection:                  |
 	*		| -> unique_ptr<socket> Socket |
 	*		| -> unique_ptr<socket> ios    |
-	*		| #  const size_t Port		|
+	*		| #  const size_t Port         |
 	*		*------------------------------*
 	* 
 	*	Pointer to this structure is a return type of pull_one()
@@ -55,9 +55,9 @@ namespace net
 
 
 	/*
-	*			 *-----------------------*
+	*                    *-----------------------*
 	*	pull_one()  <->	 |	 Connections Order   |	<->	  Background thread listener
-	*			 *-----------------------*
+	*                    *-----------------------*
 	*
 	*	Listener is listening given port. By deafult this port is 80(HTTP).
 	* 
