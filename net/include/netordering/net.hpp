@@ -493,12 +493,12 @@ namespace net
 	};
 
 	/*
-	*									 /  <->  pull_one() <-> net::listener(Port1)
-	*									/  <->  pull_one() <-> net::listener(Port2)
-	*	net::server  <->  net::queue --*
-	*									\  <->  pull_one() <-> net::listener(Port3)
-	*									...
-	*									  \  <->  pull_one() <-> net::listener(PortN)
+	*                                   /  <->  pull_one() <-> net::listener(Port1)
+	*                                  /  <->  pull_one() <-> net::listener(Port2)
+	*   net::server  <->  net::queue--*
+	*                                  \  <->  pull_one() <-> net::listener(Port3)
+	*                                  ...
+	*                                    \  <->  pull_one() <-> net::listener(PortN)
 	* 
 	*	net::server is a main class in this library
 	*	Constructor waiting for your callback function. It could be any callable object type of void(std::unique_ptr<net::connection>)
