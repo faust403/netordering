@@ -89,18 +89,18 @@ namespace net
 
 		public:
 			listener(void) : IsLocked(false),
-							 Enabled(true),
-							 Port(80),
-							 Limit(0)
+					Enabled(true),
+					Port(80),
+					Limit(0)
 			{
 				launch();
 			}
 
 			template<typename Type>
 			explicit listener(const Type Port) : Port(static_cast<std::size_t>(Port)),
-								IsLocked(false),
-								Enabled(true),
-								Limit(0)
+							 IsLocked(false),
+							 Enabled(true),
+							 Limit(0)
 			{
 				static_assert(std::is_integral_v<Type>, "Given Port is not integral");
 
