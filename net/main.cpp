@@ -34,38 +34,38 @@ std::string hash(std::string const& String, const EVP_MD* HashFunction)
 
 class A final
 {
-public:
-	void service80(const std::unique_ptr<net::connection>&& Connection)
-	{
-		boost::asio::streambuf StreamBuffer;
-		std::string Result = "Hello from server";
-		std::string Hash = "HTTP/1.0 200 OK\n\n<p>(SHA256)(" + Result + ") = " + hash(Result, EVP_sha256()) + "</p>\n";
-		std::cout << "Write: " << Hash << std::endl;
+	public:
+		void service80(const std::unique_ptr<net::connection>&& Connection)
+		{
+			boost::asio::streambuf StreamBuffer;
+			std::string Result = "Hello from server";
+			std::string Hash = "HTTP/1.0 200 OK\n\n<p>(SHA256)(" + Result + ") = " + hash(Result, EVP_sha256()) + "</p>\n";
+			std::cout << "Write: " << Hash << std::endl;
 
-		boost::asio::read_until(*Connection->socket, StreamBuffer, "\0");
-		Connection->socket->write_some(boost::asio::buffer(Hash.c_str(), Hash.size()));
-		std::this_thread::sleep_for(std::chrono::milliseconds(10));
-	}
-	void service13456(const std::unique_ptr<net::connection>&& Connection)
-	{
-		boost::asio::streambuf StreamBuffer;
-		boost::asio::read_until(*Connection->socket, StreamBuffer, "\0");
+			boost::asio::read_until(*Connection->socket, StreamBuffer, "\0");
+			Connection->socket->write_some(boost::asio::buffer(Hash.c_str(), Hash.size()));
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		}
+		void service13456(const std::unique_ptr<net::connection>&& Connection)
+		{
+			boost::asio::streambuf StreamBuffer;
+			boost::asio::read_until(*Connection->socket, StreamBuffer, "\0");
 
-		std::string Read = make_string(StreamBuffer);
-		std::string Hash = "(MD5)(" + Read + ") = " + hash(Read, EVP_md5());
+			std::string Read = make_string(StreamBuffer);
+			std::string Hash = "(MD5)(" + Read + ") = " + hash(Read, EVP_md5());
 
-		std::cout << "Write: " << Hash << std::endl;
+			std::cout << "Write: " << Hash << std::endl;
 
-		Connection->socket->write_some(boost::asio::buffer(Hash.c_str(), Hash.size()));
-	}
-	void operator()(const std::unique_ptr<net::connection> Connection)
-	{
-		if (Connection->port == 80)
-			service80(std::move(Connection));
+			Connection->socket->write_some(boost::asio::buffer(Hash.c_str(), Hash.size()));
+		}
+		void operator()(const std::unique_ptr<net::connection> Connection)
+		{
+			if (Connection->port == 80)
+				service80(std::move(Connection));
 
-		if (Connection->port == 13456)
-			service13456(std::move(Connection));
-	}
+			if (Connection->port == 13456)
+				service13456(std::move(Connection));
+		}
 } a;
 
 int main(void)
