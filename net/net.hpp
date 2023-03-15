@@ -1,11 +1,11 @@
 # pragma once
 
 # include <iostream>
+# include <cassert>
 # include <vector>
 # include <memory>
 # include <thread>
 # include <queue>
-# include <condition_variable>
 # include <type_traits>
 # include <string_view>
 
@@ -16,25 +16,63 @@ constexpr std::string_view ErrorMessage = "Sorry";
 
 namespace net
 {
+	/*
+	*		*------------------------------*
+	*		| connection:				   |
+	*		| -> unique_ptr<socket> Socket |
+	*		| -> unique_ptr<socket> ios	   |
+	*		| #  const size_t Port		   |
+	*		*------------------------------*
+	* 
+	*	Pointer to this structure is a return type of pull_one()
+	*	
+	*	`socket` has type std::unique_ptr<boost::asio::ip::tcp::socket>
+	*	`ios` has type std::unique_ptr<boost::asio::io_service>
+	*	`port` has type const std::size_t
+	* 
+	*	Note that you have freedom working with this instance.
+	*   You can distruct them or something else. Listener is have not access for this object after pull_one()
+	*	and have not any relations with this instance after pull_one();
+	*/
 	struct connection final : public boost::noncopyable
 	{
 		std::unique_ptr<boost::asio::io_service> ios = nullptr;
-		std::unique_ptr<boost::asio::ip::tcp::socket> Socket = nullptr;
-		const std::size_t Port;
+		std::unique_ptr<boost::asio::ip::tcp::socket> socket = nullptr;
+		const std::size_t port;
 
 		connection(void) = default;
 		template<typename Type>
-		explicit connection(const Type __Port): Port(__Port)
+		explicit connection(const Type __Port): port(__Port)
 		{
-			if constexpr (!std::is_integral_v<Type>)
-				throw std::invalid_argument("Given Port is not integral");
+			static_assert(std::is_integral_v<Type>, "Given Port is not integral");
 		}
 		explicit connection(std::unique_ptr<boost::asio::io_service>&& __ios, std::unique_ptr<boost::asio::ip::tcp::socket>&& __Socket, std::size_t __Port)
-			: ios(std::move(__ios)), Socket(std::move(Socket)), Port(std::move(__Port))
+			: ios(std::move(__ios)), socket(std::move(__Socket)), port(std::move(__Port))
 		{ }
 		~connection(void) = default;
 	};
 
+
+	/*
+	*					 *-----------------------*
+	*	pull_one()  <->	 |	 Connections Order   |	<->	  Background thread listener
+	*					 *-----------------------*
+	*
+	*	Listener is listening given port. By deafult this port is 80(HTTP).
+	* 
+	*	You can change port in runtime by set_port() and get it by get_port().
+	* 
+	*	You can change a limit of order by set_limit() and get it by get_limit().
+	* 
+	*	You can get a size of current queue of connections by size().
+	* 
+	*	You can enable listener by enable() and disable it by disable().
+	*	Note that disable() waiting for last connection in current thread and then disabling listener.
+	* 
+	*	Distructor calls disable() and waiting for last connection.
+	* 
+	*	Instances of this object are thread-safety.
+	*/
 	class listener final : public boost::noncopyable
 	{
 		bool Sleep = false;
@@ -63,8 +101,7 @@ namespace net
 												 Enabled(true),
 												 Limit(0)
 			{
-				if constexpr (!std::is_integral_v<Type>)
-					throw std::invalid_argument("Given Port is not integral");
+				static_assert(std::is_integral_v<Type>, "Given Port is not integral");
 
 				launch();
 			}
@@ -75,8 +112,8 @@ namespace net
 																	 IsLocked(false),
 																	 Enabled(true)
 			{
-				if constexpr (!std::is_integral_v<Type1> && !std::is_integral_v<Type2>)
-					throw std::invalid_argument("Given Port or Limit is not integral");
+				static_assert(std::is_integral_v<Type1>, "Given Port is not integral");
+				static_assert(std::is_integral_v<Type2>, "Given Limit is not integral");
 
 				launch();
 			}
@@ -136,8 +173,7 @@ namespace net
 			template<typename Type>
 			void set_port(const Type __Port)
 			{
-				if constexpr(!std::is_integral_v<Type>)
-					throw std::invalid_argument("Given Port is not integral");
+				static_assert(std::is_integral_v<Type>, "Given Port is not integral");
 
 				disable();
 				Port.store(__Port, std::memory_order_relaxed);
@@ -154,8 +190,7 @@ namespace net
 			template<typename Type>
 			void set_limit(const Type __Port)
 			{
-				if constexpr (!std::is_integral_v<Type>)
-					throw std::invalid_argument("Given Limit is not integral");
+				static_assert(std::is_integral_v<Type>, "Given Limit is not integral");
 
 				disable();
 				Limit.store(__Port, std::memory_order_relaxed);
@@ -202,12 +237,12 @@ namespace net
 
 						std::unique_ptr<connection> Connection = std::make_unique<connection>(Port.load(std::memory_order_acquire));
 						Connection->ios = std::make_unique<boost::asio::io_service>();
-						Connection->Socket = std::make_unique<boost::asio::ip::tcp::socket>(*Connection->ios);
+						Connection->socket = std::make_unique<boost::asio::ip::tcp::socket>(*Connection->ios);
 						
-						boost::asio::ip::tcp::endpoint EndPoint(boost::asio::ip::tcp::v4(), static_cast<boost::asio::ip::port_type>(Connection->Port));
+						boost::asio::ip::tcp::endpoint EndPoint(boost::asio::ip::tcp::v4(), static_cast<boost::asio::ip::port_type>(Connection->port));
 						
 						boost::asio::ip::tcp::acceptor Acceptor(IO_ServiceAcceptor, EndPoint);
-						Acceptor.accept(*Connection->Socket);
+						Acceptor.accept(*Connection->socket);
 						
 						std::lock_guard<std::mutex> LockGuard(ClientsMutex);
 						CachedLimit = Limit.load(std::memory_order_seq_cst);
@@ -215,12 +250,33 @@ namespace net
 						if (CachedLimit == 0 || Clients.size() < CachedLimit)
 							Clients.push(std::move(Connection));
 						else
-							boost::asio::write(*Connection->Socket, boost::asio::buffer(ErrorMessage.data(), ErrorMessage.size()));
+							boost::asio::write(*Connection->socket, boost::asio::buffer(ErrorMessage.data(), ErrorMessage.size()));
 						
 						EnabledMutex.unlock();
 						IsLocked.store(false, std::memory_order_seq_cst);
 					}
 				});
 			}
+	};
+
+	class server final : public boost::noncopyable
+	{
+		std::vector<std::unique_ptr<listener>> Listeners;
+
+		public:
+			server(void) = default;
+
+			template<typename... Args>
+			server(Args... args)
+			{
+				static_assert((std::is_integral_v<decltype(args)> && ...), "Given Port is not integral");
+
+				(Listeners.push_back(std::make_unique<listener>(args)), ...);
+			}
+
+			~server(void) = default;
+
+			template<typename Type>
+			void add(const Type Port){}
 	};
 }

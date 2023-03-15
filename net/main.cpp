@@ -18,5 +18,5 @@ int main(void)
 	{ }
 	Listener.disable();
 	std::unique_ptr<net::connection> Con = Listener.pull_one();
-	boost::asio::write(*Con -> Socket, boost::asio::buffer("Hello", 6));
+	boost::asio::write(*Con -> socket, boost::asio::buffer("Hello", 6));
 }
