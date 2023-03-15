@@ -37,13 +37,18 @@ class A final
 	public:
 		void operator()(const std::unique_ptr<net::connection> Connection)
 		{
+			std::cout << "Connection from " << Connection->port << std::endl;
 			boost::asio::streambuf StreamBuffer;
 			boost::asio::read_until(*Connection->socket, StreamBuffer, "\0");
 
 			std::string Read = make_string(StreamBuffer);
 			std::cout << "Read: " << Read << std::endl;
 
-			std::string Hash = "(MD5)(" + Read + ") = " + hash(Read, EVP_md5());
+			std::string Hash;
+			if(Connection -> port == 1337)
+				Hash = "(MD5)(" + Read + ") = " + hash(Read, EVP_md5());
+			else
+				Hash = "(SHA256)(" + Read + ") = " + hash(Read, EVP_sha256());
 			std::cout << "Write: " << Hash << std::endl;
 
 			boost::asio::write(*Connection->socket, boost::asio::buffer(Hash.c_str(), Hash.size()));
@@ -52,6 +57,6 @@ class A final
 
 int main(void)
 {
-	net::server Server(a, 1337);
+	net::server Server(a, 1337, 228);
 	while(true) { }
 }

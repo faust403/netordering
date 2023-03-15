@@ -264,6 +264,19 @@ namespace net
 			}
 	};
 
+	/*
+	*									 /  net::listener(Port1)
+	*									/  net::listener(Port2)
+	*	pull_one()  <->  net::queue --*
+	*									\  net::listener(Port3)
+	*									...
+	*									  \  net::listener(PortN)
+	* 
+	*	net::queue is thread-safety object - you can work with his methods from any thread
+	*	methods are same with net::listener
+	* 
+	*	But also you have ability to shutdown specific port(-s) and enable them again
+	*/
 	class queue : public boost::noncopyable
 	{
 		protected:
@@ -479,6 +492,22 @@ namespace net
 			}
 	};
 
+	/*
+	*									 /  <->  pull_one() <-> net::listener(Port1)
+	*									/  <->  pull_one() <-> net::listener(Port2)
+	*	net::server  <->  net::queue --*
+	*									\  <->  pull_one() <-> net::listener(Port3)
+	*									...
+	*									  \  <->  pull_one() <-> net::listener(PortN)
+	* 
+	*	net::server is a main class in this library
+	*	Constructor waiting for your callback function. It could be any callable object type of void(std::unique_ptr<net::connection>)
+	*	Then in special race order server will call your callback function for any accepted client from any port
+	* 
+	*	But, server creating a new thread for each callback invoke - for each new net::connection
+	*	You can set up the limit of this threads by set_limit_executor() or check it by get_limit_executor()
+	*	By default it is std::thread::hardware_concurency()
+	*/
 	class server final : public boost::noncopyable, public queue
 	{
 		std::thread Updater;
@@ -487,13 +516,13 @@ namespace net
 
 		public:
 			template<typename Callback>
-			server(const Callback CallBack) :queue(), LimitExecutor(0)
+			server(const Callback CallBack) :queue(), LimitExecutor(std::thread::hardware_concurrency())
 			{
 				launch(CallBack);
 			}
 
 			template<typename Callback, typename... Args>
-			server(const Callback CallBack, Args... args) :queue(args...), LimitExecutor(0)
+			server(const Callback CallBack, Args... args) :queue(args...), LimitExecutor(std::thread::hardware_concurrency())
 			{
 				launch(CallBack);
 			}
