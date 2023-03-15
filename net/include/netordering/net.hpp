@@ -55,9 +55,9 @@ namespace net
 
 
 	/*
-	*						*-----------------------*
-	*	pull_one()  <->	 |	 Connections Order   |	<->	  Background thread listener
-	*						*-----------------------*
+	*                    *-------------------------*
+	*   pull_one()  <->  |    Connections Order    |  <->  Background thread listener
+	*                    *-------------------------*
 	*
 	*	Listener is listening given port. By deafult this port is 80(HTTP).
 	* 
@@ -265,12 +265,12 @@ namespace net
 	};
 
 	/*
-	*                                   /  net::listener(Port1)
-	*                                  /  net::listener(Port2)
-	*  pull_one()  <->  net::queue  --*
-	*                                  \  net::listener(Port3)
-	*                                  ...
-	*                                    \  net::listener(PortN)
+	*                                    /  net::listener(Port1)
+	*                                   /  net::listener(Port2)
+	*   pull_one()  <->  net::queue  --*
+	*                                   \  net::listener(Port3)
+	*                                   ...
+	*                                     \  net::listener(PortN)
 	* 
 	*	net::queue is thread-safety object - you can work with his methods from any thread
 	*	methods are same with net::listener
