@@ -4,7 +4,7 @@
 
 # include <iostream>
 
-# include "net.hpp"
+# include <netordering/net.hpp>
 
 std::string make_string(boost::asio::streambuf& streambuf)
 {

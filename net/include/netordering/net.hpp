@@ -21,7 +21,7 @@ namespace net
 	*		*------------------------------*
 	*		| connection:				   |
 	*		| -> unique_ptr<socket> Socket |
-	*		| -> unique_ptr<socket> ios	   |
+	*		| -> unique_ptr<socket> ios    |
 	*		| #  const size_t Port		   |
 	*		*------------------------------*
 	* 
