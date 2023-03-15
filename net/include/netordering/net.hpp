@@ -223,7 +223,7 @@ namespace net
 
 			bool is_enabled(void)
 			{
-				return Sleep;
+				return !Sleep;
 			}
 
 		private:

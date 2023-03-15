@@ -71,10 +71,5 @@ class A final
 int main(void)
 {
 	net::server Server(a, 80, 13456);
-	std::this_thread::sleep_for(std::chrono::seconds(2));
-	std::cout << "Marker" << std::endl;
-	Server.remove(80);
-	std::cout << "Marker" << std::endl;
-	std::this_thread::sleep_for(std::chrono::seconds(2));
-	std::cout << Server.is_enabled() << std::endl;
+	while(true) { }
 }
