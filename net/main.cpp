@@ -38,7 +38,7 @@ class A final
 		void operator()(const std::unique_ptr<net::connection> Connection)
 		{
 			boost::asio::streambuf StreamBuffer;
-			std::string Read = "Evgeny pidor";
+			std::string Read = "Hello, world";
 			std::string Hash;
 			if (Connection->port == 1337)
 				Hash = "HTTP/1.0 200 OK\n\n<p>(MD5)(" + Read + ") = " + hash(Read, EVP_md5()) + "</p>\n";
