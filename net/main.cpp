@@ -10,10 +10,17 @@ std::string make_string(boost::asio::streambuf& streambuf)
 						boost::asio::buffers_end(streambuf.data()) };
 }
 
+class A final
+{
+	public:
+		void operator()(const std::unique_ptr<net::connection> Connection)
+		{
+			boost::asio::write(*Connection->socket, boost::asio::buffer("Hello", 6));
+		}
+} a;
+
 int main(void)
 {
-	net::queue Queue(1337);
-	std::this_thread::sleep_for(std::chrono::seconds(3));
-	Queue.disable();
-	Queue.enable();
+	net::server Server(a, 1337);
+	while(true) { }
 }

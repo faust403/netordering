@@ -5,6 +5,7 @@
 # include <vector>
 # include <memory>
 # include <thread>
+# include <future>
 # include <queue>
 # include <type_traits>
 # include <string_view>
@@ -265,25 +266,27 @@ namespace net
 			}
 	};
 
-	class queue final : public boost::noncopyable
+	class queue : public boost::noncopyable
 	{
-		std::thread Updater;
-		std::mutex ThreadSafety;
-		std::atomic<bool> Status;
-		std::mutex QueueProtector;
-		std::atomic<bool> Enabled;
-		std::vector<std::unique_ptr<listener>> Listeners;
+		protected:
+			std::thread Updater;
+			std::mutex ThreadSafety;
+			std::atomic<bool> Status;
+			std::mutex QueueProtector;
+			std::atomic<bool> Enabled;
+			std::atomic<std::size_t> LimitOrder;
+			std::vector<std::unique_ptr<listener>> Listeners;
 
-		std::queue<std::unique_ptr<connection>> Queue;
+			std::queue<std::unique_ptr<connection>> Queue;
 
 		public:
-			queue(void) : Enabled(true), Status(false)
+			queue(void) : Enabled(true), Status(false), LimitOrder(0)
 			{
 				launcher();
 			}
 
 			template<typename... Args>
-			queue(Args... args) : Enabled(true), Status(true)
+			queue(Args... args) : Enabled(true), Status(true), LimitOrder(0)
 			{
 				static_assert((std::is_integral_v<decltype(args)> && ...), "Given Port is not integral");
 
@@ -325,6 +328,12 @@ namespace net
 				}
 			}
 
+			template<typename... Args>
+			void add_list(Args... args)
+			{
+				(add(args), ...);
+			}
+
 			template<typename Type>
 			void remove(const Type Port)
 			{
@@ -339,6 +348,12 @@ namespace net
 				update();
 			}
 
+			template<typename... Args>
+			void remove_list(Args... args)
+			{
+				(remove(args), ...);
+			}
+
 			std::size_t size(void)
 			{
 				std::lock_guard<std::mutex> ThreadSafetyLockGuard(ThreadSafety);
@@ -347,16 +362,29 @@ namespace net
 				return Queue.size();
 			}
 
+			std::size_t get_limit_order(void)
+			{
+				return LimitOrder.load(std::memory_order_relaxed);
+			}
+
+			template<typename Type>
+			void set_limit_order(const Type __Limit)
+			{
+				static_assert(std::is_integral_v<Type>, "Given Limit is not integral");
+
+				LimitOrder.store(__Limit, std::memory_order_relaxed);
+			}
+
 			std::unique_ptr<connection> pull_one(void)
 			{
-				if (Listeners.size() == 0)
+				std::lock_guard<std::mutex> ThreadSafetyLockGuard(ThreadSafety);
+				std::lock_guard<std::mutex> QueueProtectorLockGuard(QueueProtector);
+
+				if (Queue.size() == 0)
 					return nullptr;
 
 				else
 				{
-					std::lock_guard<std::mutex> ThreadSafetyLockGuard(ThreadSafety);
-					std::lock_guard<std::mutex> QueueProtectorLockGuard(QueueProtector);
-
 					std::unique_ptr<connection> Result = std::move(Queue.front());
 					Queue.pop();
 					return Result;
@@ -365,6 +393,8 @@ namespace net
 
 			void enable(void)
 			{
+				std::lock_guard<std::mutex> ThreadSafetyLockGuard(ThreadSafety);
+
 				for (auto& Listener : Listeners)
 					Listener->enable();
 				update();
@@ -372,6 +402,8 @@ namespace net
 
 			void disable(void)
 			{
+				std::lock_guard<std::mutex> ThreadSafetyLockGuard(ThreadSafety);
+
 				for (auto& Listener : Listeners)
 					Listener->disable();
 				update();
@@ -423,8 +455,12 @@ namespace net
 							if (Connection != nullptr)
 							{
 								std::lock_guard<std::mutex> QueueProtectorLockGuard(QueueProtector);
+								const std::size_t CachedLimit = LimitOrder.load(std::memory_order_acquire);
 
-								Queue.push(std::move(Connection));
+								if(CachedLimit == 0 || Queue.size() < CachedLimit)
+									Queue.push(std::move(Connection));
+								else
+									boost::asio::write(*Connection->socket, boost::asio::buffer(ErrorMessage.data(), ErrorMessage.size()));
 							}
 						}
 					}
@@ -441,6 +477,86 @@ namespace net
 					Result |= Listener->is_enabled();
 
 				Status.store(Result, std::memory_order_release);
+			}
+	};
+
+	class server final : public boost::noncopyable, public queue
+	{
+		std::thread Updater;
+		std::atomic<std::size_t> LimitExecutor;
+		std::vector<std::pair<std::thread, std::future<void>>> Executors;
+
+		public:
+			template<typename Callback>
+			server(const Callback CallBack) :queue(), LimitExecutor(0)
+			{
+				launch(CallBack);
+			}
+
+			template<typename Callback, typename... Args>
+			server(const Callback CallBack, Args... args) :queue(args...), LimitExecutor(0)
+			{
+				launch(CallBack);
+			}
+
+			~server(void)
+			{
+				Enabled.store(false, std::memory_order_release);
+
+				if (Updater.joinable())
+					Updater.join();
+				else
+					throw std::runtime_error("Updater is not joinable");
+			}
+
+			template<typename Type>
+			void set_limit_executor(const Type Limit)
+			{
+				static_assert(std::is_integral_v<Type>, "Given Limit is not integral");
+
+				LimitExecutor.store(Limit, std::memory_order_relaxed);
+			}
+
+			std::size_t get_limit_executor(void)
+			{
+				return LimitExecutor.load(std::memory_order_relaxed);
+			}
+
+		private:
+			template<typename Callback>
+			void launch(const Callback CallBack)
+			{
+				static_assert(std::is_invocable_v<Callback, std::unique_ptr<connection>>, "Callable object must have unique_ptr<connection> as entry type and has operator()");
+			
+				Updater = std::thread([&](void) -> void {
+					while (Enabled.load(std::memory_order_acquire))
+					{
+						for(decltype(Executors)::iterator Iterator = Executors.begin(); Iterator != Executors.end();)
+						{
+							if (Iterator->second.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready)
+							{
+								if (Iterator->first.joinable())
+									Iterator->first.join();
+
+								Iterator = Executors.erase(Iterator);
+							}
+							else
+								Iterator += 1;
+						}
+						const std::size_t CachedLimit = LimitExecutor.load(std::memory_order_acquire);
+
+						if (CachedLimit == 0 || Executors.size() < CachedLimit)
+						{
+							std::unique_ptr<connection> Connection = pull_one();
+							if (Connection == nullptr)
+								continue;
+
+							std::packaged_task<void(std::unique_ptr<connection>)> Task{CallBack};
+							std::future<void> Future = Task.get_future();
+							Executors.push_back(std::make_pair(std::thread{ std::move(Task), std::move(Connection) }, std::move(Future)));
+						}
+					}
+				});
 			}
 	};
 }
