@@ -488,10 +488,14 @@ namespace net
 								std::lock_guard<std::mutex> QueueProtectorLockGuard(QueueProtector);
 								const std::size_t CachedLimit = LimitOrder.load(std::memory_order_acquire);
 
-								if(CachedLimit == 0 || Queue.size() < CachedLimit)
+								if (CachedLimit == 0 || Queue.size() < CachedLimit)
 									Queue.push(std::move(Connection));
 								else
+								{
 									boost::asio::write(*Connection->socket, boost::asio::buffer(ErrorMessage.data(), ErrorMessage.size()));
+									
+									Connection->socket->close();
+								}
 							}
 						}
 					}

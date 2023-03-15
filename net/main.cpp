@@ -14,6 +14,9 @@ std::string make_string(boost::asio::streambuf& streambuf)
 
 std::string hash(std::string const& String, const EVP_MD* HashFunction)
 {
+	if (String.size() == 0)
+		return "";
+
 	std::pair<std::array<unsigned char, EVP_MAX_MD_SIZE>, unsigned int> Bytes;
 	EVP_MD_CTX* Context = EVP_MD_CTX_new();
 
@@ -35,17 +38,35 @@ std::string hash(std::string const& String, const EVP_MD* HashFunction)
 class A final
 {
 	public:
+		// Type in your browser localhost
 		void service80(const std::unique_ptr<net::connection>&& Connection)
 		{
 			boost::asio::streambuf StreamBuffer;
 			std::string Result = "Hello from server";
-			std::string Hash = "HTTP/1.0 200 OK\n\n<p>(SHA256)(" + Result + ") = " + hash(Result, EVP_sha256()) + "</p>\n";
+			std::string Hash = "HTTP/1.0 200 OK\n\n<p>(SHA256)(" + Result + ") = " + hash(Result, EVP_sha256()) + "</p>";
 			std::cout << "Write: " << Hash << std::endl;
 
 			boost::asio::read_until(*Connection->socket, StreamBuffer, "\0");
 			Connection->socket->write_some(boost::asio::buffer(Hash.c_str(), Hash.size()));
-			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+			std::this_thread::sleep_for(std::chrono::milliseconds(5));
 		}
+
+		/* # Make o program on Python
+		*  import socket
+		*
+        *  s = socket.socket()
+        *  s.connect(("localhost", 13456))
+		*
+        *  print("Input a message:", end=' ')
+        *  message = str(input())
+		* 
+		*  if len(message) == 0:
+		*	exit(1)
+		*
+        *  print(message, f"({len(message)})")
+        *  s.send(message.encode())
+        *  print(s.recv(1024).decode('utf-8'))
+		*/
 		void service13456(const std::unique_ptr<net::connection>&& Connection)
 		{
 			boost::asio::streambuf StreamBuffer;
@@ -58,18 +79,23 @@ class A final
 
 			Connection->socket->write_some(boost::asio::buffer(Hash.c_str(), Hash.size()));
 		}
+
+		// This overloaded operator will be called in Server
 		void operator()(const std::unique_ptr<net::connection> Connection)
 		{
 			if (Connection->port == 80)
 				service80(std::move(Connection));
 
-			if (Connection->port == 13456)
-				service13456(std::move(Connection));
+			else
+				if (Connection->port == 13456)
+					service13456(std::move(Connection));
 		}
 } a;
 
 int main(void)
 {
 	net::server Server(a, 80, 13456);
-	while (true) {}
+	Server.set_limit_executor(3); // Only 3 clients will be executed in parallel. Others will waiting for they order
+	Server.set_limit_order(2); // Order can be size of 2. Not more. If there will be new connection it will send error-message and close connection
+	while (true) { } // There is while(true) because will be called distructor and Server will listen last connections. For demonstration purposes only
 }
