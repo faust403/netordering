@@ -51,22 +51,22 @@ class A final
 			std::this_thread::sleep_for(std::chrono::milliseconds(5));
 		}
 
-		/* # Make o program on Python
-		*  import socket
-		*
-        *  s = socket.socket()
-        *  s.connect(("localhost", 13456))
-		*
-        *  print("Input a message:", end=' ')
-        *  message = str(input())
-		* 
-		*  if len(message) == 0:
-		*	exit(1)
-		*
-        *  print(message, f"({len(message)})")
-        *  s.send(message.encode())
-        *  print(s.recv(1024).decode('utf-8'))
-		*/
+        /* # Make o program on Python
+         * import socket
+         *
+         * s = socket.socket()
+         * s.connect(("localhost", 13456))
+         *
+         * print("Input a message:", end=' ')
+         * message = str(input())
+         * 
+         * if len(message) == 0:
+         *    exit(1)
+         *
+         * print(message, f"({len(message)})")
+         * s.send(message.encode())
+         * print(s.recv(1024).decode('utf-8'))
+         */
 		void service13456(const std::unique_ptr<net::connection>&& Connection)
 		{
 			boost::asio::streambuf StreamBuffer;
