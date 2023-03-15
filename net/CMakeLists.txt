@@ -9,7 +9,9 @@ find_package(Boost REQUIRED)
 IF(Boost_FOUND) 
     include_directories(${Boost_INCLUDE_DIR}) 
     link_directories(${Boost_LIBRARY_PATH}) 
-ENDIF() 
+ENDIF()
+
+find_package(OpenSSL REQUIRED)
  
 add_executable (${PROJECT_NAME} "main.cpp" "net.cpp" "net.hpp") 
-target_link_libraries(${PROJECT_NAME} ${Boost_LIBRARIES})
+target_link_libraries(${PROJECT_NAME} ${Boost_LIBRARIES} OpenSSL::SSL OpenSSL::Crypto)

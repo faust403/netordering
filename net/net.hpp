@@ -136,32 +136,30 @@ namespace net
 			{
 				std::lock_guard<std::mutex> LockGuard(ThreadSafety);
 
-				if(Sleep)
-					if (!IsLocked.load(std::memory_order_acquire))
-					{
-						while (!IsLocked.load(std::memory_order_acquire))
-							continue;
+				if (Sleep)
+				{
+					while (!IsLocked.load(std::memory_order_acquire))
+						continue;
 
-						EnabledMutex.unlock();
-						IsLocked.store(false, std::memory_order_seq_cst);
-						Sleep = false;
-					}
+					EnabledMutex.unlock();
+					IsLocked.store(false, std::memory_order_seq_cst);
+					Sleep = false;
+				}
 			}
 
 			void disable(void)
 			{
 				std::lock_guard<std::mutex> LockGuard(ThreadSafety);
 
-				if(!Sleep)
-					if (IsLocked.load(std::memory_order_acquire))
-					{
-						while (IsLocked.load(std::memory_order_acquire))
-							continue;
+				if (!Sleep)
+				{
+					while (IsLocked.load(std::memory_order_acquire))
+						continue;
 
-						EnabledMutex.lock();
-						IsLocked.store(true, std::memory_order_seq_cst);
-						Sleep = true;
-					}
+					EnabledMutex.lock();
+					IsLocked.store(true, std::memory_order_seq_cst);
+					Sleep = true;
+				}
 			}
 
 			std::size_t get_port(void)
@@ -375,6 +373,7 @@ namespace net
 				LimitOrder.store(__Limit, std::memory_order_relaxed);
 			}
 
+			[[ nodiscard ]]
 			std::unique_ptr<connection> pull_one(void)
 			{
 				std::lock_guard<std::mutex> ThreadSafetyLockGuard(ThreadSafety);
@@ -393,7 +392,7 @@ namespace net
 
 			void enable(void)
 			{
-				std::lock_guard<std::mutex> ThreadSafetyLockGuard(ThreadSafety);
+ 				std::lock_guard<std::mutex> ThreadSafetyLockGuard(ThreadSafety);
 
 				for (auto& Listener : Listeners)
 					Listener->enable();
