@@ -133,6 +133,12 @@ std::size_t net::queue::get_limit_order(void)
 	return LimitOrder.load(std::memory_order_relaxed);
 }
 
+void net::listener::whileIsNotConstructed(void)
+{
+	while (!IsConstructed.load(std::memory_order_acquire))
+		continue;
+}
+
 void net::listener::launch(void)
 {
 	std::lock_guard<std::mutex> LockGuard(ThreadSafety);
@@ -141,6 +147,7 @@ void net::listener::launch(void)
 		boost::asio::io_service IO_ServiceAcceptor;
 		std::size_t CachedLimit = Limit.load(std::memory_order_acquire);
 
+		IsConstructed.store(true, std::memory_order_seq_cst);
 		while (Enabled.load(std::memory_order_acquire))
 		{
 			EnabledMutex.lock();
@@ -166,7 +173,7 @@ void net::listener::launch(void)
 			EnabledMutex.unlock();
 			IsLocked.store(false, std::memory_order_seq_cst);
 		}
-		});
+	});
 }
 
 [[ nodiscard ]]

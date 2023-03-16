@@ -86,19 +86,23 @@ namespace net
 		std::atomic<bool> IsLocked;
 		std::atomic<std::size_t> Port;
 		std::atomic<std::size_t> Limit;
+		std::atomic<bool> IsConstructed;
 		std::queue<std::unique_ptr<connection>> Clients;
 
 		public:
 			listener(void) : IsLocked(false),
+                    IsConstructed(false),
 					Enabled(true),
 					Port(80),
 					Limit(0)
 			{
 				launch();
+				whileIsNotConstructed();
 			}
 
 			template<typename Type>
 			explicit listener(const Type Port) : Port(static_cast<std::size_t>(Port)),
+				             IsConstructed(false),
 							 IsLocked(false),
 							 Enabled(true),
 							 Limit(0)
@@ -106,10 +110,12 @@ namespace net
 				static_assert(std::is_integral_v<Type>, "Given Port is not integral");
 
 				launch();
+				whileIsNotConstructed();
 			}
 
 			template<typename Type1, typename Type2>
 			explicit listener(const Type1 Port, const Type2 Limit) : Limit(static_cast<std::size_t>(Limit)),
+				                        IsConstructed(false),
 										Port(static_cast<std::size_t>(Port)),
 										IsLocked(false),
 										Enabled(true)
@@ -118,6 +124,7 @@ namespace net
 				static_assert(std::is_integral_v<Type2>, "Given Limit is not integral");
 
 				launch();
+				whileIsNotConstructed();
 			}
 
 			explicit listener(listener const&) = delete;
@@ -148,7 +155,7 @@ namespace net
 				static_assert(std::is_integral_v<Type>, "Given Port is not integral");
 
 				disable();
-				Port.store(__Port, std::memory_order_relaxed);
+				Port.store(__Port, std::memory_order_seq_cst);
 				enable();
 			}
 
@@ -160,7 +167,7 @@ namespace net
 				static_assert(std::is_integral_v<Type>, "Given Limit is not integral");
 
 				disable();
-				Limit.store(__Port, std::memory_order_relaxed);
+				Limit.store(__Port, std::memory_order_seq_cst);
 				enable();
 			}
 
@@ -173,6 +180,8 @@ namespace net
 
 		private:
 			void launch(void);
+
+			void whileIsNotConstructed(void);
 	};
 
 	/*
