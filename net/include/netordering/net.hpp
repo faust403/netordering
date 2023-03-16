@@ -10,7 +10,6 @@
 # include <future>
 # include <queue>
 
-# include <boost/noncopyable.hpp>
 # include <boost/asio.hpp>
 
 constexpr std::string_view ErrorMessage = "Sorry";
@@ -35,7 +34,7 @@ namespace net
 	*   You can distruct them or something else. Listener is have not access for this object after pull_one()
 	*	and have not any relations with this instance after pull_one();
 	*/
-	struct connection final : public boost::noncopyable
+	struct connection final
 	{
 		std::unique_ptr<boost::asio::io_service> ios = nullptr;
 		std::unique_ptr<boost::asio::ip::tcp::socket> socket = nullptr;
@@ -50,6 +49,8 @@ namespace net
 		explicit connection(std::unique_ptr<boost::asio::io_service>&& __ios, std::unique_ptr<boost::asio::ip::tcp::socket>&& __Socket, std::size_t __Port)
 			: ios(std::move(__ios)), socket(std::move(__Socket)), port(std::move(__Port))
 		{ }
+		explicit connection(connection const&) = delete;
+		explicit connection(connection const&&) = delete;
 		~connection(void) = default;
 	};
 
@@ -74,7 +75,7 @@ namespace net
 	* 
 	*	Instances of this object are thread-safety.
 	*/
-	class listener final : public boost::noncopyable
+	class listener final
 	{
 		bool Sleep = false;
 		std::thread Listener;
@@ -118,6 +119,9 @@ namespace net
 
 				launch();
 			}
+
+			explicit listener(listener const&) = delete;
+			explicit listener(listener const&&) = delete;
 
 			~listener(void)
 			{
@@ -277,7 +281,7 @@ namespace net
 	* 
 	*	But also you have ability to shutdown specific port(-s) and enable them again
 	*/
-	class queue : public boost::noncopyable
+	class queue
 	{
 		protected:
 			std::thread Updater;
@@ -306,6 +310,9 @@ namespace net
 
 				launcher();
 			}
+
+			explicit queue(queue const&) = delete;
+			explicit queue(queue const&&) = delete;
 
 			~queue(void)
 			{
@@ -533,7 +540,7 @@ namespace net
 	*	You can set up the limit of this threads by set_limit_executor() or check it by get_limit_executor()
 	*	By default it is std::thread::hardware_concurency()
 	*/
-	class server final : public boost::noncopyable, public queue
+	class server final : public queue
 	{
 		std::thread Updater;
 		std::atomic<std::size_t> LimitExecutor;
@@ -551,6 +558,9 @@ namespace net
 			{
 				launch(CallBack);
 			}
+
+			explicit server(server const&) = delete;
+			explicit server(server const&&) = delete;
 
 			~server(void)
 			{
