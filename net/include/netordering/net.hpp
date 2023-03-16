@@ -355,6 +355,53 @@ namespace net
 
 			bool is_enabled(void) const;
 
+			template<typename Type1, typename Type2>
+			void set_specific_limit(const Type1 Port, const Type2 Limit)
+			{
+				static_assert(std::is_integral_v<Type1>, "Given Port is not integral");
+				static_assert(std::is_integral_v<Type2>, "Given Limit is not integral");
+
+				std::lock_guard<std::mutex> ThreadSafetyLockGuard(ThreadSafety);
+				std::lock_guard<std::mutex> ListenersProtectorLockGuard(ListenersProtector);
+
+				for (decltype(Listeners)::iterator Iterator = Listeners.begin(); Iterator != Listeners.end(); Iterator += 1)
+					if (Iterator->get()->get_port() == Port)
+					{
+						Iterator->get()->set_limit(Limit);
+					
+						return;
+					}
+			}
+
+			template<typename Type>
+			std::size_t get_specific_limit(const Type Port)
+			{
+				static_assert(std::is_integral_v<Type>, "Given Port is not integral");
+
+				std::lock_guard<std::mutex> ThreadSafetyLockGuard(ThreadSafety);
+				std::lock_guard<std::mutex> ListenersProtectorLockGuard(ListenersProtector);
+
+				for (decltype(Listeners)::iterator Iterator = Listeners.begin(); Iterator != Listeners.end(); Iterator += 1)
+					if (Iterator->get()->get_port() == Port)
+						return Iterator->get()->get_limit();
+
+				throw std::runtime_error("Object has not specified port");
+			}
+
+			template<typename Type>
+			bool has(const Type Port)
+			{
+				static_assert(std::is_integral_v<Type>, "Given Port is not integral");
+
+				std::lock_guard<std::mutex> ThreadSafetyLockGuard(ThreadSafety);
+				std::lock_guard<std::mutex> ListenersProtectorLockGuard(ListenersProtector);
+
+				for(decltype(Listeners)::iterator Iterator = Listeners.begin(); Iterator != Listeners.end(); Iterator += 1)
+					if (Iterator->get()->get_port() == Port)
+						return true;
+				return false;
+			}
+
 		private:
 			void launcher(void);
 

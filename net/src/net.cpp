@@ -174,8 +174,11 @@ void net::listener::launch(void)
 			if (CachedLimit == 0 || Clients.size() < CachedLimit)
 				Clients.push(std::move(Connection));
 			else
+			{
 				boost::asio::write(*Connection->socket, boost::asio::buffer(ErrorMessage.data(), ErrorMessage.size()));
-
+			
+				Connection->socket->close();
+			}
 			EnabledMutex.unlock();
 			IsLocked.store(false, std::memory_order_seq_cst);
 		}
