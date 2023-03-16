@@ -1,10 +1,7 @@
 ﻿project(net VERSION 1.1) 
  
 set(CMAKE_CXX_STANDARD 20) 
- 
-SET(CMAKE_INCLUDE_PATH ${CMAKE_INCLUDE_PATH} "C:/Boost/include/boost-1_81") 
-SET(CMAKE_LIBRARY_PATH ${CMAKE_LIBRARY_PATH} "C:/Boost/lib") 
- 
+
 find_package(Boost REQUIRED)  
 IF(Boost_FOUND) 
     include_directories(${Boost_INCLUDE_DIR}) 
@@ -12,7 +9,6 @@ IF(Boost_FOUND)
 ENDIF()
 
 find_package(OpenSSL REQUIRED)
-
 
 add_library(netordering STATIC "include/netordering/net.hpp" "src/net.cpp")
 target_include_directories(
