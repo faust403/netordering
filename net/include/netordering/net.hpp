@@ -136,42 +136,11 @@ namespace net
 					throw std::runtime_error("Listener is not joinable");
 			}
 
-			void enable(void)
-			{
-				std::lock_guard<std::mutex> LockGuard(ThreadSafety);
+			void enable(void);
 
-				if (Sleep)
-				{
-					while (!IsLocked.load(std::memory_order_acquire))
-						continue;
+			void disable(void);
 
-					EnabledMutex.unlock();
-					IsLocked.store(false, std::memory_order_seq_cst);
-					Sleep = false;
-				}
-			}
-
-			void disable(void)
-			{
-				std::lock_guard<std::mutex> LockGuard(ThreadSafety);
-
-				if (!Sleep)
-				{
-					while (IsLocked.load(std::memory_order_acquire))
-						continue;
-
-					EnabledMutex.lock();
-					IsLocked.store(true, std::memory_order_seq_cst);
-					Sleep = true;
-				}
-			}
-
-			std::size_t get_port(void)
-			{
-				std::lock_guard<std::mutex> LockGuard(ThreadSafety);
-
-				return Port.load(std::memory_order_relaxed);
-			}
+			std::size_t get_port(void);
 
 			template<typename Type>
 			void set_port(const Type __Port)
@@ -183,12 +152,7 @@ namespace net
 				enable();
 			}
 
-			std::size_t get_limit(void)
-			{
-				std::lock_guard<std::mutex> LockGuard(ThreadSafety);
-
-				return Limit.load(std::memory_order_relaxed);
-			}
+			std::size_t get_limit(void);
 
 			template<typename Type>
 			void set_limit(const Type __Port)
@@ -200,72 +164,15 @@ namespace net
 				enable();
 			}
 
-			std::size_t size(void)
-			{
-				std::lock_guard<std::mutex> LockGuard(ThreadSafety);
-				std::lock_guard<std::mutex> __LockGuard(ClientsMutex);
-
-				return Clients.size();
-			}
+			std::size_t size(void);
 
 			[[ nodiscard ]]
-			std::unique_ptr<connection> pull_one(void)
-			{
-				std::lock_guard<std::mutex> LockGuard(ThreadSafety);
-				std::lock_guard<std::mutex> __LockGuard(ClientsMutex);
+			std::unique_ptr<connection> pull_one(void);
 
-				if (Clients.size() == 0)
-					return nullptr;
-				else
-				{
-					std::unique_ptr<connection> Result = std::move(Clients.front());
-
-					Clients.pop();
-					return Result;
-				}
-			}
-
-			bool is_enabled(void)
-			{
-				return !Sleep;
-			}
+			bool is_enabled(void) const;
 
 		private:
-			void launch(void)
-			{
-				std::lock_guard<std::mutex> LockGuard(ThreadSafety);
-
-				Listener = std::thread([&](void) -> void {
-					boost::asio::io_service IO_ServiceAcceptor;
-					std::size_t CachedLimit = Limit.load(std::memory_order_acquire);
-
-					while (Enabled.load(std::memory_order_acquire))
-					{
-						EnabledMutex.lock();
-						IsLocked.store(true, std::memory_order_seq_cst);
-
-						std::unique_ptr<connection> Connection = std::make_unique<connection>(Port.load(std::memory_order_acquire));
-						Connection->ios = std::make_unique<boost::asio::io_service>();
-						Connection->socket = std::make_unique<boost::asio::ip::tcp::socket>(*Connection->ios);
-						
-						boost::asio::ip::tcp::endpoint EndPoint(boost::asio::ip::tcp::v4(), static_cast<boost::asio::ip::port_type>(Connection->port));
-						
-						boost::asio::ip::tcp::acceptor Acceptor(IO_ServiceAcceptor, EndPoint);
-						Acceptor.accept(*Connection->socket);
-						
-						std::lock_guard<std::mutex> LockGuard(ClientsMutex);
-						CachedLimit = Limit.load(std::memory_order_seq_cst);
-
-						if (CachedLimit == 0 || Clients.size() < CachedLimit)
-							Clients.push(std::move(Connection));
-						else
-							boost::asio::write(*Connection->socket, boost::asio::buffer(ErrorMessage.data(), ErrorMessage.size()));
-						
-						EnabledMutex.unlock();
-						IsLocked.store(false, std::memory_order_seq_cst);
-					}
-				});
-			}
+			void launch(void);
 	};
 
 	/*
@@ -380,18 +287,9 @@ namespace net
 				(remove(args), ...);
 			}
 
-			std::size_t size(void)
-			{
-				std::lock_guard<std::mutex> ThreadSafetyLockGuard(ThreadSafety);
-				std::lock_guard<std::mutex> QueueProtectorLockGuard(QueueProtector);
+			std::size_t size(void);
 
-				return Queue.size();
-			}
-
-			std::size_t get_limit_order(void)
-			{
-				return LimitOrder.load(std::memory_order_relaxed);
-			}
+			std::size_t get_limit_order(void);
 
 			template<typename Type>
 			void set_limit_order(const Type __Limit)
@@ -402,45 +300,11 @@ namespace net
 			}
 
 			[[ nodiscard ]]
-			std::unique_ptr<connection> pull_one(void)
-			{
-				std::lock_guard<std::mutex> ThreadSafetyLockGuard(ThreadSafety);
-				std::lock_guard<std::mutex> QueueProtectorLockGuard(QueueProtector);
+			std::unique_ptr<connection> pull_one(void);
 
-				if (Queue.size() == 0)
-					return nullptr;
+			void enable(void);
 
-				else
-				{
-					std::unique_ptr<connection> Result = std::move(Queue.front());
-					Queue.pop();
-					return Result;
-				}
-			}
-
-			void enable(void)
-			{
- 				std::lock_guard<std::mutex> ThreadSafetyLockGuard(ThreadSafety);
-				ListenersProtector.lock();
-
-				for (auto& Listener : Listeners)
-					Listener->enable();
-
-				ListenersProtector.unlock();
-				update();
-			}
-
-			void disable(void)
-			{
-				std::lock_guard<std::mutex> ThreadSafetyLockGuard(ThreadSafety);
-				ListenersProtector.lock();
-
-				for (auto& Listener : Listeners)
-					Listener->disable();
-
-				ListenersProtector.unlock();
-				update();
-			}
+			void disable(void);
 
 			template<typename Type>
 			void enable(const Type Port)
@@ -473,55 +337,12 @@ namespace net
 				(disable(Port), ...);
 			}
 
-			bool is_enabled(void)
-			{
-				return Status.load(std::memory_order_relaxed);
-			}
+			bool is_enabled(void) const;
 
 		private:
-			void launcher(void)
-			{
-				Updater = std::thread([&](void) -> void {
-					while(Enabled.load(std::memory_order_acquire))
-					{
-						std::lock_guard<std::mutex> ListenersProtectorLockGuard(ListenersProtector);
+			void launcher(void);
 
-						for (auto& Listener : Listeners)
-						{
-							std::unique_ptr<connection> Connection = Listener->pull_one();
-
-							if (Connection != nullptr)
-							{
-								std::lock_guard<std::mutex> QueueProtectorLockGuard(QueueProtector);
-								const std::size_t CachedLimit = LimitOrder.load(std::memory_order_acquire);
-
-								if (CachedLimit == 0 || Queue.size() < CachedLimit)
-									Queue.push(std::move(Connection));
-								else
-								{
-									boost::asio::write(*Connection->socket, boost::asio::buffer(ErrorMessage.data(), ErrorMessage.size()));
-									
-									Connection->socket->close();
-								}
-							}
-						}
-					}
-				});
-			}
-
-			void update(void)
-			{
-				if (Listeners.size() == 0)
-					Status.store(false, std::memory_order_release);
-				
-				std::lock_guard<std::mutex> ListenersProtectorLockGuard(ListenersProtector);
-
-				bool Result = false;
-				for (auto& Listener : Listeners)
-					Result |= Listener->is_enabled();
-
-				Status.store(Result, std::memory_order_release);
-			}
+			void update(void);
 	};
 
 	/*
@@ -580,35 +401,11 @@ namespace net
 				LimitExecutor.store(Limit, std::memory_order_relaxed);
 			}
 
-			std::size_t get_limit_executor(void)
-			{
-				return LimitExecutor.load(std::memory_order_relaxed);
-			}
+			std::size_t get_limit_executor(void) const;
 
-			std::vector<std::size_t> listeners(void)
-			{
-				std::vector<std::size_t> Result;
+			std::vector<std::size_t> listeners(void);
 
-				ListenersProtector.lock();
-				for (decltype(Listeners)::iterator Iterator = Listeners.begin(); Iterator != Listeners.end(); Iterator += 1)
-					Result.push_back(Iterator->get()->get_port());
-				ListenersProtector.unlock();
-
-				return Result;
-			}
-
-			std::vector<std::size_t> active_listeners(void)
-			{
-				std::vector<std::size_t> Result;
-
-				ListenersProtector.lock();
-				for (decltype(Listeners)::iterator Iterator = Listeners.begin(); Iterator != Listeners.end(); Iterator += 1)
-					if (Iterator->get()->is_enabled())
-						Result.push_back(Iterator->get()->get_port());
-				ListenersProtector.unlock();
-
-				return Result;
-			}
+			std::vector<std::size_t> active_listeners(void);
 
 		private:
 			template<typename Callback>
