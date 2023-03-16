@@ -60,6 +60,12 @@ void net::queue::launcher(void)
 	});
 }
 
+void net::queue::whileIsNotConstructed(void)
+{
+	while (IsConstructed.load(std::memory_order_acquire))
+		continue;
+}
+
 void net::queue::update(void)
 {
 	if (Listeners.size() == 0)

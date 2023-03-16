@@ -2,14 +2,23 @@
  
 set(CMAKE_CXX_STANDARD 20) 
 
-SET(CMAKE_INCLUDE_PATH ${CMAKE_INCLUDE_PATH} "C:/Boost/include/boost-1_81") 
-SET(CMAKE_LIBRARY_PATH ${CMAKE_LIBRARY_PATH} "C:/Boost/lib") 
 
-add_executable (${PROJECT_NAME} "main.cpp") 
-add_library(netordering STATIC "include/netordering/net.hpp" "src/net.cpp")
+add_executable(
+	${PROJECT_NAME}
+	"main.cpp"
+) 
+
+add_library(
+		netordering
+	STATIC
+		"include/netordering/net.hpp"
+		"src/net.cpp"
+)
+
 
 find_package(Boost REQUIRED)
 find_package(OpenSSL REQUIRED)
+
 IF(Boost_FOUND)
 	target_link_libraries(
 			${PROJECT_NAME}
@@ -25,6 +34,7 @@ IF(Boost_FOUND)
 			Boost::headers
 	)
 ENDIF()
+
 
 target_include_directories(
 	netordering

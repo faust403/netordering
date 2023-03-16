@@ -8,8 +8,7 @@
 
 std::string make_string(boost::asio::streambuf& streambuf)
 {
-	return std::string{ boost::asio::buffers_begin(streambuf.data()),
-						boost::asio::buffers_end(streambuf.data()) };
+	return std::string{boost::asio::buffers_begin(streambuf.data()), boost::asio::buffers_end(streambuf.data())};
 }
 
 std::string hash(std::string const& String, const EVP_MD* HashFunction)
@@ -73,6 +72,9 @@ class A final
 			boost::asio::read_until(*Connection->socket, StreamBuffer, "\0");
 
 			std::string Read = make_string(StreamBuffer);
+
+			std::cout << "Read: " << Read << std::endl;
+
 			std::string Hash = "(MD5)(" + Read + ") = " + hash(Read, EVP_md5());
 
 			std::cout << "Write: " << Hash << std::endl;
@@ -94,8 +96,19 @@ class A final
 
 int main(void)
 {
+	// Server(callback, port1, port2, ..., portN);
 	net::server Server(a, 80, 13456);
+
+	Server.remove_list(13456, 80); // remove 13456 and 80 ports
+	std::cout << Server.is_enabled() << std::endl; // false
+
+	Server.add_list(13456, 80); // add 13456 and 80 port again
+	std::cout << Server.is_enabled() << std::endl; // true
+
+	std::vector<std::size_t> Ports = Server.active_listeners(); // get ports which server listening
+	std::copy(Ports.begin(), Ports.end(), std::ostream_iterator<std::size_t>(std::cout, " ")); // 13456 80
+
 	Server.set_limit_executor(3); // Only 3 clients will be executed in parallel. Others will waiting for they order
 	Server.set_limit_order(2); // Order can be size of 2. Not more. If there will be new connection it will send error-message and close connection
-	while (true) { } // There is while(true) because will be called distructor and Server will listen last connections. For demonstration purposes only
+	while (true) { } // There is while(true) because will be called distructor and Server will listen last connections on specified ports(but will not call Callback for them in another thread. Accepting without exec). For demonstration purposes only
 }

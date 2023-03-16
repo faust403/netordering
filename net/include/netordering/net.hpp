@@ -206,15 +206,20 @@ namespace net
 			std::mutex QueueProtector;
 			std::atomic<bool> Enabled;
 			std::mutex ListenersProtector;
+			std::atomic<bool> IsConstructed;
 			std::atomic<std::size_t> LimitOrder;
 			std::vector<std::unique_ptr<listener>> Listeners;
 
 			std::queue<std::unique_ptr<connection>> Queue;
 
+			void whileIsNotConstructed(void);
+
 		public:
 			queue(void) : Enabled(true), Status(false), LimitOrder(0)
 			{
 				launcher();
+
+				whileIsNotConstructed();
 			}
 
 			template<typename... Args>
@@ -225,6 +230,8 @@ namespace net
 				(Listeners.push_back(std::make_unique<listener>(args)), ...);
 
 				launcher();
+
+				whileIsNotConstructed();
 			}
 
 			explicit queue(queue const&) = delete;
@@ -381,12 +388,16 @@ namespace net
 			server(const Callback CallBack) :queue(), LimitExecutor(std::thread::hardware_concurrency())
 			{
 				launch(CallBack);
+
+				whileIsNotConstructed();
 			}
 
 			template<typename Callback, typename... Args>
 			server(const Callback CallBack, Args... args) :queue(args...), LimitExecutor(std::thread::hardware_concurrency())
 			{
 				launch(CallBack);
+
+				whileIsNotConstructed();
 			}
 
 			explicit server(server const&) = delete;
@@ -431,6 +442,8 @@ namespace net
 							{
 								if (Iterator->first.joinable())
 									Iterator->first.join();
+								else
+									throw std::runtime_error("Listener is not joinable");
 
 								Iterator = Executors.erase(Iterator);
 							}
